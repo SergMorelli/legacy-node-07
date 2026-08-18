@@ -1,0 +1,301 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ftp.oldserv.datadef.ae</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #03110a;
+      --panel: rgba(4, 24, 15, 0.92);
+      --line: rgba(49, 207, 118, 0.18);
+      --text: #9affc9;
+      --muted: #5eb785;
+      --accent: #52ff9a;
+      --warn: #ffd36a;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      display: grid;
+      place-items: center;
+      padding: 24px;
+      background:
+        radial-gradient(circle at top, rgba(32, 119, 72, 0.18), transparent 38%),
+        linear-gradient(180deg, #020805 0%, var(--bg) 100%);
+      color: var(--text);
+      font: 16px/1.5 "IBM Plex Mono", "Fira Code", Consolas, monospace;
+    }
+
+    .terminal {
+      width: min(960px, 100%);
+      min-height: 560px;
+      border: 1px solid var(--line);
+      background: var(--panel);
+      box-shadow:
+        0 0 0 1px rgba(82, 255, 154, 0.04) inset,
+        0 18px 60px rgba(0, 0, 0, 0.48);
+      position: relative;
+      overflow: hidden;
+    }
+
+    .terminal::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background:
+        repeating-linear-gradient(
+          180deg,
+          rgba(255, 255, 255, 0.02) 0,
+          rgba(255, 255, 255, 0.02) 1px,
+          transparent 2px,
+          transparent 4px
+        );
+      pointer-events: none;
+      opacity: 0.22;
+    }
+
+    .titlebar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--line);
+      color: var(--muted);
+      background: rgba(255, 255, 255, 0.015);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      font-size: 12px;
+    }
+
+    .dots {
+      display: flex;
+      gap: 8px;
+    }
+
+    .dots span {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      display: block;
+      background: rgba(154, 255, 201, 0.3);
+    }
+
+    .screen {
+      padding: 22px 20px 28px;
+      position: relative;
+      z-index: 1;
+    }
+
+    .line {
+      min-height: 1.5em;
+      white-space: pre-wrap;
+    }
+
+    .muted {
+      color: var(--muted);
+    }
+
+    .warn {
+      color: var(--warn);
+    }
+
+    .prompt {
+      color: var(--accent);
+    }
+
+    .input-row {
+      display: none;
+      align-items: center;
+      gap: 10px;
+      margin-top: 10px;
+      padding-top: 12px;
+      border-top: 1px dashed rgba(82, 255, 154, 0.2);
+    }
+
+    .input-row.active {
+      display: flex;
+    }
+
+    .input-row label {
+      color: var(--accent);
+      white-space: nowrap;
+    }
+
+    .input-row input {
+      flex: 1;
+      background: transparent;
+      border: none;
+      outline: none;
+      color: var(--text);
+      font: inherit;
+      padding: 0;
+    }
+
+    .cursor {
+      display: inline-block;
+      width: 0.65ch;
+      height: 1.1em;
+      vertical-align: -0.15em;
+      background: var(--accent);
+      animation: blink 1s steps(1, end) infinite;
+    }
+
+    .hint {
+      margin-top: 18px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    @keyframes blink {
+      50% {
+        opacity: 0;
+      }
+    }
+
+    @media (max-width: 640px) {
+      body {
+        padding: 0;
+      }
+
+      .terminal {
+        min-height: 100vh;
+        border: none;
+      }
+
+      .screen {
+        padding: 18px 14px 22px;
+      }
+
+      .titlebar {
+        font-size: 11px;
+        padding: 10px 12px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="terminal" aria-label="FTP terminal emulator">
+    <div class="titlebar">
+      <div class="dots" aria-hidden="true">
+        <span></span>
+        <span></span>
+        <span></span>
+      </div>
+      <div>legacy ftp access node :: ftp.oldserv.datadef.ae</div>
+    </div>
+
+    <div class="screen">
+      <div id="output" aria-live="polite"></div>
+
+      <form id="commandForm" class="input-row" autocomplete="off">
+        <label for="commandInput"><span class="prompt">guest@oldserv</span>:~$</label>
+        <input id="commandInput" name="command" type="text" spellcheck="false" autofocus>
+      </form>
+
+      <div class="hint">Подсказка: это только стартовая страница. Дальше можно развить её в полноценную загадку с командами и скрытыми ответами.</div>
+    </div>
+  </main>
+
+  <script>
+    const output = document.getElementById("output");
+    const form = document.getElementById("commandForm");
+    const input = document.getElementById("commandInput");
+
+    const bootLines = [
+      { text: "[22:14:03] Resolving host ftp.oldserv.datadef.ae ...", delay: 500 },
+      { text: "[22:14:04] Connected to 198.51.100.42:21", delay: 600 },
+      { text: "[22:14:05] 220 oldserv.datadef.ae FTP server ready", delay: 700 },
+      { text: "[22:14:06] AUTH TLS not supported by remote host", delay: 750, className: "warn" },
+      { text: "[22:14:07] Logging in as guest ...", delay: 800 },
+      { text: "[22:14:08] 331 Guest login ok, send your complete e-mail as password", delay: 900 },
+      { text: "[22:14:09] PASS ********", delay: 600 },
+      { text: "[22:14:10] 230 Login successful", delay: 700 },
+      { text: "[22:14:11] Remote system type is UNIX", delay: 600 },
+      { text: "[22:14:12] WARNING: directory index damaged, manual command mode enabled", delay: 850, className: "warn" },
+      { text: "[22:14:13] Type 'help' to inspect allowed commands", delay: 500 }
+    ];
+
+    const responses = {
+      help: [
+        "Available commands:",
+        "  ls        list directory contents",
+        "  pwd       print current directory",
+        "  cat       access denied",
+        "  get       file retrieval unavailable",
+        "  quit      close session"
+      ],
+      ls: [
+        "drwxr-xr-x   2 root root      4096 Jun 18  1998 pub",
+        "drwx------   2 root root      4096 Sep 07  1999 incoming",
+        "-rw-r--r--   1 root root       128 Jan 12  2001 readme.old",
+        "-rw-------   1 root root       512 Mar 03  2002 archive.key.bak"
+      ],
+      pwd: ["/srv/ftp/legacy"],
+      cat: ["550 Permission denied."],
+      get: ["425 Data channel unavailable."],
+      quit: ["221 Connection closed by foreign host."]
+    };
+
+    function appendLine(text = "", className = "") {
+      const line = document.createElement("div");
+      line.className = `line ${className}`.trim();
+      line.textContent = text;
+      output.appendChild(line);
+      line.scrollIntoView({ block: "end" });
+    }
+
+    function appendPrompt(command) {
+      appendLine(`guest@oldserv:~$ ${command}`, "prompt");
+    }
+
+    async function playBoot() {
+      for (const item of bootLines) {
+        await new Promise((resolve) => setTimeout(resolve, item.delay));
+        appendLine(item.text, item.className || "");
+      }
+
+      const cursorLine = document.createElement("div");
+      cursorLine.className = "line";
+      cursorLine.innerHTML = '<span class="prompt">Session ready</span> <span class="cursor"></span>';
+      output.appendChild(cursorLine);
+
+      await new Promise((resolve) => setTimeout(resolve, 700));
+      cursorLine.remove();
+      form.classList.add("active");
+      input.focus();
+    }
+
+    form.addEventListener("submit", (event) => {
+      event.preventDefault();
+      const raw = input.value.trim();
+      if (!raw) {
+        return;
+      }
+
+      appendPrompt(raw);
+      input.value = "";
+
+      const command = raw.toLowerCase().split(/\s+/)[0];
+      const lines = responses[command] || ["500 Unknown command."];
+
+      for (const line of lines) {
+        appendLine(line, line.startsWith("221") ? "warn" : "");
+      }
+
+      if (command === "quit") {
+        form.classList.remove("active");
+      }
+    });
+
+    playBoot();
+  </script>
+</body>
+</html>
