@@ -196,7 +196,7 @@
       <div id="output" aria-live="polite"></div>
 
       <form id="commandForm" class="input-row" autocomplete="off">
-        <label for="commandInput"><span class="prompt">guest@oldserv</span>:~$</label>
+        <label id="inputPrompt" for="commandInput"><span class="prompt">guest@oldserv</span>:~$</label>
         <input id="commandInput" name="command" type="text" spellcheck="false" autofocus>
       </form>
 
@@ -208,20 +208,30 @@
     const output = document.getElementById("output");
     const form = document.getElementById("commandForm");
     const input = document.getElementById("commandInput");
+    const inputPrompt = document.getElementById("inputPrompt");
+    let passwordAttempts = 0;
+    let passwordRequest = null;
 
     const bootLines = [
-      { text: "[22:14:03] Resolving host ftp.oldserv.datadef.ae ...", delay: 500 },
-      { text: "[22:14:04] Connected to 198.51.100.42:21", delay: 600 },
-      { text: "[22:14:05] 220 oldserv.datadef.ae FTP server ready", delay: 700 },
-      { text: "[22:14:06] AUTH TLS not supported by remote host", delay: 750, className: "warn" },
-      { text: "[22:14:07] Logging in as guest ...", delay: 800 },
-      { text: "[22:14:08] 331 Guest login ok, send your complete e-mail as password", delay: 900 },
-      { text: "[22:14:09] PASS ********", delay: 600 },
-      { text: "[22:14:10] 230 Login successful", delay: 700 },
-      { text: "[22:14:11] Remote system type is UNIX", delay: 600 },
-      { text: "[22:14:12] WARNING: directory index damaged, manual command mode enabled", delay: 850, className: "warn" },
-      { text: "[22:14:13] Type 'help' to inspect allowed commands", delay: 500 }
+      { text: "Resolving host ftp.oldserv.datadef.ae ...", delay: 500 },
+      { text: "Connected to 198.51.100.42:21", delay: 600 },
+      { text: "220 oldserv.datadef.ae FTP server ready", delay: 700 },
+      { text: "AUTH TLS not supported by remote host", delay: 750, className: "warn" },
+      { text: "Logging in as guest ...", delay: 800 },
+      { text: "331 Guest login ok, send your complete e-mail as password", delay: 900 },
+      { text: "PASS ********", delay: 600 },
+      { text: "230 Login successful", delay: 700 },
+      { text: "Remote system type is UNIX", delay: 600 },
+      { text: "WARNING: directory index damaged, manual command mode enabled", delay: 850, className: "warn" },
+      { text: "Type 'help' to inspect allowed commands", delay: 500 }
     ];
+    const dubaiClock = new Intl.DateTimeFormat("en-GB", {
+      timeZone: "Asia/Dubai",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+      hourCycle: "h23"
+    });
 
     const responses = {
       help: [
@@ -236,6 +246,7 @@
         "drwxr-xr-x   2 root root      4096 Jun 18  1998 pub",
         "drwx------   2 root root      4096 Sep 07  1999 incoming",
         "-rw-r--r--   1 root root       128 Jan 12  2001 readme.old",
+        "-rw-r--r--   1 root root      2048 Jan 12  2001 overmind_protocol.hc",
         "-rw-------   1 root root       512 Mar 03  2002 archive.key.bak"
       ],
       pwd: ["/srv/ftp/legacy"],
@@ -256,10 +267,27 @@
       appendLine(`guest@oldserv:~$ ${command}`, "prompt");
     }
 
+    function requestPassword(prompt, failureMessage) {
+      passwordAttempts = 0;
+      passwordRequest = { prompt, failureMessage };
+      input.type = "password";
+      input.autocomplete = "current-password";
+      inputPrompt.textContent = prompt;
+      input.focus();
+    }
+
+    function resetPasswordPrompt() {
+      passwordRequest = null;
+      passwordAttempts = 0;
+      input.type = "text";
+      input.autocomplete = "off";
+      inputPrompt.innerHTML = '<span class="prompt">guest@oldserv</span>:~$';
+    }
+
     async function playBoot() {
       for (const item of bootLines) {
         await new Promise((resolve) => setTimeout(resolve, item.delay));
-        appendLine(item.text, item.className || "");
+        appendLine(`[${dubaiClock.format(new Date())}] ${item.text}`, item.className || "");
       }
 
       const cursorLine = document.createElement("div");
@@ -276,12 +304,45 @@
     form.addEventListener("submit", (event) => {
       event.preventDefault();
       const raw = input.value.trim();
-      if (!raw) {
+      if (!raw && !passwordRequest) {
+        return;
+      }
+
+      if (passwordRequest) {
+        input.value = "";
+        passwordAttempts += 1;
+        appendLine(passwordRequest.failureMessage, "warn");
+
+        if (passwordAttempts >= 3) {
+          if (passwordRequest.prompt.startsWith("[sudo]")) {
+            appendLine("sudo: 3 incorrect password attempts", "warn");
+          }
+          resetPasswordPrompt();
+        } else {
+          inputPrompt.textContent = passwordRequest.prompt;
+        }
+
+        input.focus();
         return;
       }
 
       appendPrompt(raw);
       input.value = "";
+
+      if (/^sudo(?:\s|$)/i.test(raw)) {
+        requestPassword("[sudo] password for guest:", "Sorry, try again.");
+        return;
+      }
+
+      if (/^su(?:\s|$)/i.test(raw)) {
+        requestPassword("Password:", "su: Authentication failure");
+        return;
+      }
+
+      if (/^(?:root(?:\s|$)|login\s+root(?:\s|$))/i.test(raw)) {
+        requestPassword("Password:", "Login incorrect");
+        return;
+      }
 
       const command = raw.toLowerCase().split(/\s+/)[0];
       const lines = responses[command] || ["500 Unknown command."];
