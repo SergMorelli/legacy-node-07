@@ -107,6 +107,11 @@
       color: var(--warn);
     }
 
+    .alert {
+      color: #ff6666;
+      font-weight: bold;
+    }
+
     .prompt {
       color: var(--accent);
     }
@@ -124,13 +129,22 @@
       display: flex;
     }
 
+    .input-row.alert-mode {
+      flex-wrap: wrap;
+    }
+
     .input-row label {
       color: var(--accent);
-      white-space: nowrap;
+    }
+
+    .input-row.alert-mode label {
+      color: #ff6666;
+      flex-basis: 100%;
     }
 
     .input-row input {
       flex: 1;
+      min-width: 0;
       background: transparent;
       border: none;
       outline: none;
@@ -211,6 +225,9 @@
     const inputPrompt = document.getElementById("inputPrompt");
     let passwordAttempts = 0;
     let passwordRequest = null;
+    let lockdownDeadline = null;
+    let lockdownTimer = null;
+    let lockedOut = false;
 
     const bootLines = [
       { text: "Resolving host ftp.oldserv.datadef.ae ...", delay: 500 },
@@ -261,15 +278,16 @@
       line.textContent = text;
       output.appendChild(line);
       line.scrollIntoView({ block: "end" });
+      return line;
     }
 
     function appendPrompt(command) {
       appendLine(`guest@oldserv:~$ ${command}`, "prompt");
     }
 
-    function requestPassword(prompt, failureMessage) {
+    function requestPassword(prompt, failureMessage, triggerLockdown = false) {
       passwordAttempts = 0;
-      passwordRequest = { prompt, failureMessage };
+      passwordRequest = { prompt, failureMessage, triggerLockdown };
       input.type = "password";
       input.autocomplete = "current-password";
       inputPrompt.textContent = prompt;
@@ -282,6 +300,40 @@
       input.type = "text";
       input.autocomplete = "off";
       inputPrompt.innerHTML = '<span class="prompt">guest@oldserv</span>:~$';
+    }
+
+    function startLockdown() {
+      passwordRequest = null;
+      input.value = "";
+      input.type = "password";
+      input.autocomplete = "off";
+      inputPrompt.textContent = "Аварийный код деактивации блокировки:";
+      form.classList.add("alert-mode");
+      appendLine("ВНИМАНИЕ: ОБНАРУЖЕНА ПОПЫТКА ВТОРЖЕНИЯ.", "alert");
+      appendLine("Система блокировки активирована. Введите аварийный код до истечения времени.", "alert");
+      const countdown = appendLine("", "alert");
+      lockdownDeadline = performance.now() + 30000;
+
+      function updateCountdown() {
+        const remaining = Math.max(0, Math.ceil((lockdownDeadline - performance.now()) / 1000));
+        const message = `До блокировки: 00:${String(remaining).padStart(2, "0")}`;
+        if (countdown.textContent !== message) {
+          countdown.textContent = message;
+        }
+        if (remaining === 0) {
+          clearInterval(lockdownTimer);
+          lockdownTimer = null;
+          lockdownDeadline = null;
+          lockedOut = true;
+          input.value = "";
+          form.classList.remove("active");
+          appendLine("ДОСТУП ЗАБЛОКИРОВАН. СОЕДИНЕНИЕ ПРЕРВАНО.", "alert");
+        }
+      }
+
+      updateCountdown();
+      lockdownTimer = setInterval(updateCountdown, 250);
+      input.focus();
     }
 
     async function playBoot() {
@@ -303,6 +355,19 @@
 
     form.addEventListener("submit", (event) => {
       event.preventDefault();
+      if (lockedOut) {
+        return;
+      }
+      if (lockdownDeadline !== null) {
+        input.value = "";
+        if (performance.now() >= lockdownDeadline) {
+          return;
+        }
+        appendLine("ОШИБКА: НЕВЕРНЫЙ АВАРИЙНЫЙ КОД.", "alert");
+        input.focus();
+        return;
+      }
+
       const raw = input.value.trim();
       if (!raw && !passwordRequest) {
         return;
@@ -314,6 +379,10 @@
         appendLine(passwordRequest.failureMessage, "warn");
 
         if (passwordAttempts >= 3) {
+          if (passwordRequest.triggerLockdown) {
+            startLockdown();
+            return;
+          }
           if (passwordRequest.prompt.startsWith("[sudo]")) {
             appendLine("sudo: 3 incorrect password attempts", "warn");
           }
@@ -335,7 +404,7 @@
       }
 
       if (/^su(?:\s|$)/i.test(raw)) {
-        requestPassword("Password:", "su: Authentication failure");
+        requestPassword("Password:", "su: Authentication failure", true);
         return;
       }
 
